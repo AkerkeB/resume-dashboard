@@ -7,7 +7,7 @@ import seaborn as sns
 @st.cache_data
 
 def load_data():
-    df = pd.read_csv("resumes_cleaned.csv")
+    df = pd.read_csv("resumes_cleaned_en.csv")
     df = df.rename(columns={"Область": "Region"})
     return df
 
