@@ -198,9 +198,9 @@ elif analysis_type == "Анализ резюме":
     if df_resumes_raw is None:
         st.error("Не удалось загрузить данные по резюме. Убедитесь, что файл 'resumes_enbekkz.csv' находится в корневой папке вашего проекта.")
     else:
-        df_resumes = df_resumes_raw.rename(columns={"City/Region": "Region"})
+        df_resumes = df_resumes_raw.rename(columns={"City/Region": "Region"}) # Используем переименованный df_resumes
 
-        # --- Меню для выбора графика резюме ---
+        # --- Меню для выбора графика резюме (остается в боковой панели) ---
         st.sidebar.subheader("Аналитика по резюме")
         chart_type = st.sidebar.radio(
             "Выберите график:",
@@ -216,67 +216,157 @@ elif analysis_type == "Анализ резюме":
         )
         st.sidebar.divider()
 
-        # --- ГЛОБАЛЬНЫЙ ФИЛЬТР ПО РЕГИОНАМ ---
-        st.sidebar.subheader("Фильтры")
-        all_regions = sorted(df_resumes['Region'].dropna().unique())
-        region_selection = st.sidebar.multiselect(
-            "Выберите регионы:", options=all_regions, default=list(all_regions)
-        )
-        
-        if region_selection:
-            filtered_df = df_resumes[df_resumes['Region'].isin(region_selection)]
-        else:
-            filtered_df = df_resumes
-            st.sidebar.warning("Не выбран ни одного региона. Отображаются данные по всей стране.")
+        # ГЛОБАЛЬНЫЙ ФИЛЬТР УДАЛЕН ИЗ БОКОВОЙ ПАНЕЛИ
 
         # --- Основная область для отображения ---
         st.header("Анализ данных по резюме")
-        st.markdown(f"**Выбранные регионы:** {', '.join(region_selection) if region_selection else 'Все'}")
-        st.divider()
+        # Информационная строка о выбранных регионах удалена, так как фильтр будет локальным
+        # st.markdown(f"**Выбранные регионы:** {', '.join(region_selection) if region_selection else 'Все'}")
+        st.divider() # Оставляем разделитель для визуальной структуры
+        
+        # --- Отображение графиков резюме с ЛОКАЛЬНЫМИ ФИЛЬТРАМИ ---
         
         if chart_type == "Топ-20 регионов по количеству резюме":
             st.subheader("Топ-20 регионов по количеству размещенных резюме")
-            region_counts = filtered_df['Region'].value_counts().head(20)
-            fig = px.bar(region_counts, x=region_counts.index, y=region_counts.values, title="Количество резюме по регионам", labels={'x': 'Регион', 'y': 'Количество резюме'}, text_auto=True, height=600)
-            fig.update_layout(xaxis_tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
+            
+            # Локальный фильтр по регионам
+            all_regions_local = sorted(df_resumes['Region'].dropna().unique())
+            region_selection_local = st.multiselect(
+                "Выберите регионы для этого графика:", 
+                options=all_regions_local, 
+                default=list(all_regions_local),
+                key="resume_top_regions_filter" # Уникальный ключ для каждого multiselect
+            )
+            
+            if region_selection_local:
+                filtered_df_local = df_resumes[df_resumes['Region'].isin(region_selection_local)]
+                region_counts = filtered_df_local['Region'].value_counts().head(20)
+                fig = px.bar(region_counts, x=region_counts.index, y=region_counts.values, title="Количество резюме по регионам", labels={'x': 'Регион', 'y': 'Количество резюме'}, text_auto=True, height=600)
+                fig.update_layout(xaxis_tickangle=-45)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Пожалуйста, выберите хотя бы один регион.")
         
         elif chart_type == "Самые популярные профессии":
             st.subheader("Топ-10 самых популярных профессий среди соискателей")
-            top_jobs = filtered_df['Category'].value_counts().head(10)
-            fig = px.bar(top_jobs, y=top_jobs.index, x=top_jobs.values, orientation='h', title="Топ-10 профессий в выбранных регионах", labels={'y': 'Категория профессии', 'x': 'Количество резюме'}, text_auto=True, height=600)
-            st.plotly_chart(fig, use_container_width=True)
+
+            # Локальный фильтр по регионам
+            all_regions_local = sorted(df_resumes['Region'].dropna().unique())
+            region_selection_local = st.multiselect(
+                "Выберите регионы для этого графика:", 
+                options=all_regions_local, 
+                default=list(all_regions_local),
+                key="resume_top_professions_filter"
+            )
+
+            if region_selection_local:
+                filtered_df_local = df_resumes[df_resumes['Region'].isin(region_selection_local)]
+                top_jobs = filtered_df_local['Category'].value_counts().head(10)
+                fig = px.bar(top_jobs, y=top_jobs.index, x=top_jobs.values, orientation='h', title="Топ-10 профессий в выбранных регионах", labels={'y': 'Категория профессии', 'x': 'Количество резюме'}, text_auto=True, height=600)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Пожалуйста, выберите хотя бы один регион.")
             
         elif chart_type == "Зависимость зарплаты от опыта":
             st.subheader("Зависимость ожидаемой зарплаты от опыта работы")
-            df_plot = filtered_df.dropna(subset=['Salary', 'Work experience (year)'])
-            df_plot = df_plot[df_plot['Salary'] < 5000000] # Убираем выбросы для наглядности
-            fig = px.scatter(df_plot, x="Work experience (year)", y="Salary", color="Region", title="Ожидаемая зарплата vs. Опыт работы", labels={"Work experience (year)": "Опыт работы (лет)", "Salary": "Ожидаемая зарплата (KZT)"}, hover_name="Category", height=600)
-            st.plotly_chart(fig, use_container_width=True)
+
+            # Локальный фильтр по регионам
+            all_regions_local = sorted(df_resumes['Region'].dropna().unique())
+            region_selection_local = st.multiselect(
+                "Выберите регионы для этого графика:", 
+                options=all_regions_local, 
+                default=list(all_regions_local),
+                key="resume_salary_experience_filter"
+            )
+            
+            if region_selection_local:
+                filtered_df_local = df_resumes[df_resumes['Region'].isin(region_selection_local)]
+                df_plot = filtered_df_local.dropna(subset=['Salary', 'Work experience (year)'])
+                df_plot = df_plot[df_plot['Salary'] < 5000000] 
+                fig = px.scatter(df_plot, x="Work experience (year)", y="Salary", color="Region", title="Ожидаемая зарплата vs. Опыт работы", labels={"Work experience (year)": "Опыт работы (лет)", "Salary": "Ожидаемая зарплата (KZT)"}, hover_name="Category", height=600)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Пожалуйста, выберите хотя бы один регион.")
 
         elif chart_type == "Распределение по уровню образования":
             st.subheader("Распределение соискателей по уровню образования")
-            edu_counts = filtered_df['Education'].value_counts()
-            fig = px.pie(edu_counts, values=edu_counts.values, names=edu_counts.index, title="Распределение по уровню образования", hole=0.3)
-            fig.update_traces(textinfo='percent+label')
-            st.plotly_chart(fig, use_container_width=True)
+
+            # Локальный фильтр по регионам
+            all_regions_local = sorted(df_resumes['Region'].dropna().unique())
+            region_selection_local = st.multiselect(
+                "Выберите регионы для этого графика:", 
+                options=all_regions_local, 
+                default=list(all_regions_local),
+                key="resume_education_filter"
+            )
+
+            if region_selection_local:
+                filtered_df_local = df_resumes[df_resumes['Region'].isin(region_selection_local)]
+                edu_counts = filtered_df_local['Education'].value_counts()
+                fig = px.pie(edu_counts, values=edu_counts.values, names=edu_counts.index, title="Распределение по уровню образования", hole=0.3)
+                fig.update_traces(textinfo='percent+label')
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Пожалуйста, выберите хотя бы один регион.")
         
         elif chart_type == "Статистика зарплат по регионам":
             st.subheader("Статистика зарплат (среднее, медиана, мода) по регионам")
-            grouped = filtered_df.groupby("Region")["Salary"].agg(["mean", "median", lambda x: x.mode().iloc[0] if not x.mode().empty else None]).rename(columns={'<lambda_0>': 'mode'})
-            grouped = grouped.dropna().sort_values("mean", ascending=False).head(20)
-            st.dataframe(grouped.style.format("{:,.0f} KZT"), use_container_width=True)
+
+            # Локальный фильтр по регионам
+            all_regions_local = sorted(df_resumes['Region'].dropna().unique())
+            region_selection_local = st.multiselect(
+                "Выберите регионы для этого графика:", 
+                options=all_regions_local, 
+                default=list(all_regions_local),
+                key="resume_salary_stats_filter"
+            )
+            
+            if region_selection_local:
+                filtered_df_local = df_resumes[df_resumes['Region'].isin(region_selection_local)]
+                grouped = filtered_df_local.groupby("Region")["Salary"].agg(["mean", "median", lambda x: x.mode().iloc[0] if not x.mode().empty else None]).rename(columns={'<lambda_0>': 'mode'})
+                grouped = grouped.dropna().sort_values("mean", ascending=False).head(20)
+                st.dataframe(grouped.style.format("{:,.0f} KZT"), use_container_width=True)
+            else:
+                st.warning("Пожалуйста, выберите хотя бы один регион.")
             
         elif chart_type == "Распределение зарплат по условиям работы":
             st.subheader("Распределение ожидаемых зарплат по условиям работы")
-            df_plot = filtered_df.dropna(subset=['Salary', 'working conditions'])
-            df_plot = df_plot[df_plot['Salary'] < 5000000] # Убираем выбросы
-            fig = px.box(df_plot, x="working conditions", y="Salary", color="working conditions", title="Распределение зарплат по условиям работы", labels={"working conditions": "Условия работы", "Salary": "Ожидаемая зарплата (KZT)"}, height=600)
-            st.plotly_chart(fig, use_container_width=True)
+
+            # Локальный фильтр по регионам
+            all_regions_local = sorted(df_resumes['Region'].dropna().unique())
+            region_selection_local = st.multiselect(
+                "Выберите регионы для этого графика:", 
+                options=all_regions_local, 
+                default=list(all_regions_local),
+                key="resume_salary_conditions_filter"
+            )
+            
+            if region_selection_local:
+                filtered_df_local = df_resumes[df_resumes['Region'].isin(region_selection_local)]
+                df_plot = filtered_df_local.dropna(subset=['Salary', 'working conditions'])
+                df_plot = df_plot[df_plot['Salary'] < 5000000]
+                fig = px.box(df_plot, x="working conditions", y="Salary", color="working conditions", title="Распределение зарплат по условиям работы", labels={"working conditions": "Условия работы", "Salary": "Ожидаемая зарплата (KZT)"}, height=600)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Пожалуйста, выберите хотя бы один регион.")
 
         elif chart_type == "Распределение зарплат по полу":
             st.subheader("Распределение ожидаемых зарплат по полу")
-            df_plot = filtered_df.dropna(subset=['Salary', 'Sex'])
-            df_plot = df_plot[df_plot['Salary'] < 5000000] # Убираем выбросы
-            fig = px.box(df_plot, x="Sex", y="Salary", color="Sex", title="Распределение зарплат по полу", labels={"Sex": "Пол", "Salary": "Ожидаемая зарплата (KZT)"}, height=600)
-            st.plotly_chart(fig, use_container_width=True)
+            
+            # Локальный фильтр по регионам
+            all_regions_local = sorted(df_resumes['Region'].dropna().unique())
+            region_selection_local = st.multiselect(
+                "Выберите регионы для этого графика:", 
+                options=all_regions_local, 
+                default=list(all_regions_local),
+                key="resume_salary_sex_filter" # Уникальный ключ
+            )
+
+            if region_selection_local:
+                filtered_df_local = df_resumes[df_resumes['Region'].isin(region_selection_local)]
+                df_plot = filtered_df_local.dropna(subset=['Salary', 'Sex'])
+                df_plot = df_plot[df_plot['Salary'] < 5000000]
+                fig = px.box(df_plot, x="Sex", y="Salary", color="Sex", title="Распределение зарплат по полу", labels={"Sex": "Пол", "Salary": "Ожидаемая зарплата (KZT)"}, height=600)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Пожалуйста, выберите хотя бы один регион.")
