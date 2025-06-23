@@ -19,10 +19,14 @@ st.set_option('deprecation.showPyplotGlobalUse', False) # Убираем пре�
 def load_data(file_name):
     """Универсальная функция для загрузки CSV-файлов."""
     try:
-        df = pd.read_csv(file_name)
-        return df
-    except FileNotFoundError:
-        st.error(f"Ошибка: Файл '{file_name}' не найден. Убедитесь, что он находится в корневой папке проекта.")
+        # Проверяем, существует ли файл, перед чтением
+        if os.path.exists(file_name):
+            df = pd.read_csv(file_name)
+            return df
+        else:
+            return None
+    except Exception as e:
+        st.error(f"Произошла ошибка при чтении файла {file_name}: {e}")
         return None
 
 # --- Основная часть приложения ---
@@ -43,14 +47,17 @@ st.sidebar.divider()
 if analysis_type == "Анализ вакансий":
     df_vacancies = load_data("main_cleaned_vacancies.csv")
 
-    if df_vacancies is not None:
+    # Проверяем, загрузились ли данные
+    if df_vacancies is None:
+        st.error("Не удалось загрузить данные по вакансиям. Убедитесь, что файл 'main_cleaned_vacancies.csv' находится в корневой папке вашего проекта.")
+    else:
         # --- Меню для выбора графика вакансий ---
         st.sidebar.subheader("Аналитика по вакансиям")
         menu = st.sidebar.radio(
             "Выберите график:",
             [
                 "Самые популярные профессии по регионам",
-                "Влияние опыта на зарплату в разрезе образования",
+                "Влияние опыта на зарплату",
                 "3D-визуализация: Опыт, Образование, Зарплата",
                 "Топ-20 регионов по количеству вакансий",
                 "Средняя зарплата по регионам",
@@ -67,50 +74,65 @@ if analysis_type == "Анализ вакансий":
         # --- Основная область для отображения ---
         st.header("Анализ данных по вакансиям")
 
+        # --- Предобработка данных (выполняется только при необходимости) ---
+        salary_by_education_experience = df_vacancies.groupby(['Образование', 'Опыт работы', 'Категория']).apply(
+            lambda x: pd.Series({
+                'Средняя зарплата': (x['Средняя зарплата'] * x['Рабочих мест']).sum() / x['Рабочих мест'].sum() if x['Рабочих мест'].sum() > 0 else 0,
+                'Общее количество рабочих мест': x['Рабочих мест'].sum()
+            })
+        ).reset_index()
+        salary_by_education_experience['Средняя зарплата'] = salary_by_education_experience['Средняя зарплата'].astype(int)
+
         if menu == "Самые популярные профессии по регионам":
             st.subheader("Топ-5 самых востребованных профессий в разрезе регионов")
-            
             trends_by_profession = df_vacancies.groupby(['Название работы', 'Фильтрованные регионы'])['Рабочих мест'].sum().reset_index(name='Количество вакансий')
             top_professions = trends_by_profession.sort_values(['Фильтрованные регионы', 'Количество вакансий'], ascending=[True, False]).groupby('Фильтрованные регионы').head(5)
-
-            # Локальный фильтр над графиком
-            selected_regions = st.multiselect(
-                'Выберите регионы для отображения:',
-                options=top_professions['Фильтрованные регионы'].unique(),
-                default=top_professions['Фильтрованные регионы'].unique()
-            )
             
+            selected_regions = st.multiselect(
+                'Выберите регионы для отображения:', options=top_professions['Фильтрованные регионы'].unique(), default=top_professions['Фильтрованные регионы'].unique()
+            )
             if selected_regions:
                 filtered_data = top_professions[top_professions['Фильтрованные регионы'].isin(selected_regions)]
-                fig_bar = px.bar(
-                    filtered_data, x='Название работы', y='Количество вакансий', color='Фильтрованные регионы',
-                    title='Топ-5 популярных профессий по выбранным регионам',
-                    labels={'Количество вакансий': 'Количество вакансий', 'Название работы': 'Профессия'},
-                    height=700
-                )
-                fig_bar.update_layout(xaxis_title="Профессия", yaxis_title="Количество вакансий")
-                st.plotly_chart(fig_bar, use_container_width=True)
+                fig = px.bar(filtered_data, x='Название работы', y='Количество вакансий', color='Фильтрованные регионы', title='Топ-5 популярных профессий по выбранным регионам', labels={'Количество вакансий': 'Кол-во вакансий', 'Название работы': 'Профессия'}, height=700)
+                st.plotly_chart(fig, use_container_width=True)
             else:
                 st.warning("Пожалуйста, выберите хотя бы один регион.")
 
-        # ... (остальные `elif` для вакансий)
-        # Я не буду переписывать каждый график, но покажу, как можно улучшить некоторые из них
+        elif menu == "Влияние опыта на зарплату":
+            st.subheader("Влияние опыта работы на среднюю зарплату в разрезе образования")
+            fig = px.line(salary_by_education_experience, x='Опыт работы', y='Средняя зарплата', color='Образование', title='Зависимость средней зарплаты от опыта и образования', labels={'Опыт работы': 'Опыт работы (лет)', 'Средняя зарплата': 'Средняя зарплата (KZT)', 'Образование': 'Уровень образования'}, markers=True, height=700)
+            st.plotly_chart(fig, use_container_width=True)
+
+        elif menu == "3D-визуализация: Опыт, Образование, Зарплата":
+            st.subheader("3D-визуализация зависимости зарплаты от опыта и образования")
+            unique_categories = df_vacancies['Категория'].unique()
+            selected_categories = st.multiselect('Выберите категории:', options=unique_categories, default=unique_categories)
+            if selected_categories:
+                filtered_df = df_vacancies[df_vacancies['Категория'].isin(selected_categories)]
+                fig_3d = px.scatter_3d(filtered_df, x='Опыт работы', y='Образование', z='Средняя зарплата', color='Категория', title='3D Scatter Plot', hover_name='Категория', height=800, labels={'Опыт работы': 'Опыт', 'Образование': 'Образование', 'Средняя зарплата': 'Ср. Зарплата'})
+                st.plotly_chart(fig_3d, use_container_width=True)
+            else:
+                st.warning("Пожалуйста, выберите хотя бы одну категорию.")
+
         elif menu == "Топ-20 регионов по количеству вакансий":
             st.subheader("Топ-20 регионов по общему количеству открытых вакансий")
             jobs_by_city = df_vacancies.groupby("Фильтрованные регионы")["Рабочих мест"].sum().sort_values(ascending=False).head(20).reset_index()
-            fig = px.bar(
-                jobs_by_city, x='Фильтрованные регионы', y='Рабочих мест',
-                title='Топ-20 регионов по количеству вакансий в 2024 году',
-                labels={'Фильтрованные регионы': 'Регион', 'Рабочих мест': 'Количество вакансий'},
-                text_auto=True, color='Фильтрованные регионы', color_discrete_sequence=px.colors.qualitative.Prism
-            )
-            fig.update_layout(height=700, xaxis_tickangle=-45, showlegend=False)
+            fig = px.bar(jobs_by_city, x='Фильтрованные регионы', y='Рабочих мест', title='Топ-20 регионов по количеству вакансий', labels={'Фильтрованные регионы': 'Регион', 'Рабочих мест': 'Количество вакансий'}, text_auto=True, color='Фильтрованные регионы', color_discrete_sequence=px.colors.qualitative.Prism, height=700)
+            fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
+
+        elif menu == "Средняя зарплата по регионам":
+            st.subheader("Средняя зарплата по регионам Казахстана")
+            df_vacancies["ЗП_с_учетом_мест"] = df_vacancies["Средняя зарплата"] * df_vacancies["Рабочих мест"]
+            weighted_avg_salary = df_vacancies.groupby("Фильтрованные регионы").apply(lambda x: x["ЗП_с_учетом_мест"].sum() / x["Рабочих мест"].sum() if x["Рабочих мест"].sum() > 0 else 0).sort_values(ascending=False).astype(int).reset_index(name="Средняя зарплата")
+            fig = px.bar(weighted_avg_salary, x='Фильтрованные регионы', y='Средняя зарплата', title='Средняя зарплата по регионам', labels={'Фильтрованные регионы': 'Регион', 'Средняя зарплата': 'Средняя зарплата (KZT)'}, text_auto=True, color='Фильтрованные регионы', color_discrete_sequence=px.colors.qualitative.G10, height=700)
+            fig.update_layout(xaxis_tickangle=-45, showlegend=False)
             st.plotly_chart(fig, use_container_width=True)
 
         elif menu == 'Карта вакансий по Казахстану':
-            # Этот код оставляем как есть, он уже хорошо структурирован
             st.subheader("Интерактивная карта вакансий и средней зарплаты по Казахстану")
-            # ... (ваш код для карты folium)
+            # ... ваш код для карты folium, он уже хорош ...
+            # Я только добавлю use_container_width=True для лучшего отображения
             df_vacancies["Средняя зарплата с учетом рабочих мест"] = df_vacancies["Средняя зарплата"] * df_vacancies["Рабочих мест"]
             weighted_avg_salary = df_vacancies.groupby("Фильтрованные регионы").apply(
                 lambda x: x["Средняя зарплата с учетом рабочих мест"].sum() / x["Рабочих мест"].sum() if x["Рабочих мест"].sum() > 0 else 0
@@ -136,13 +158,47 @@ if analysis_type == "Анализ вакансий":
             HeatMap(heat_data, radius=20, max_zoom=13).add_to(m)
             colormap.add_to(m)
             st_folium(m, use_container_width=True)
-            
+
+        elif menu == "Требования к уровню образования":
+            st.subheader("Требования к уровню образования в вакансиях")
+            education_counts = df_vacancies["Образование"].value_counts()
+            fig = px.pie(education_counts, values=education_counts.values, names=education_counts.index, title="Доля вакансий по требуемому уровню образования", hole=0.3)
+            fig.update_traces(textinfo='percent+label')
+            st.plotly_chart(fig, use_container_width=True)
+
+        elif menu == "Средняя зарплата по уровню образования":
+            st.subheader("Средняя зарплата в зависимости от уровня образования")
+            df_vacancies["ЗП_с_учетом_мест"] = df_vacancies["Средняя зарплата"] * df_vacancies["Рабочих мест"]
+            avg_salary_by_edu = df_vacancies.groupby("Образование").apply(lambda x: x["ЗП_с_учетом_мест"].sum() / x["Рабочих мест"].sum() if x["Рабочих мест"].sum() > 0 else 0).sort_values(ascending=False).astype(int).reset_index(name="Средняя зарплата")
+            fig = px.bar(avg_salary_by_edu, x='Образование', y='Средняя зарплата', title='Средняя зарплата по уровню образования', labels={'Образование': 'Уровень образования', 'Средняя зарплата': 'Средняя зарплата (KZT)'}, text_auto=True, height=600)
+            st.plotly_chart(fig, use_container_width=True)
+
+        elif menu == "Распределение зарплат по графику работы":
+            st.subheader("Распределение средних зарплат по графику работы")
+            fig = px.box(df_vacancies, x='График работы', y='Средняя зарплата', color='График работы', title="Распределение зарплат по графику работы", labels={'График работы': 'График работы', 'Средняя зарплата': 'Средняя зарплата (KZT)'}, height=600)
+            st.plotly_chart(fig, use_container_width=True)
+
+        elif menu == 'Топ-10 компаний по количеству вакансий':
+            st.subheader("Топ-10 компаний с наибольшим количеством вакансий")
+            top_companies = df_vacancies.groupby("Название компаний")["Рабочих мест"].sum().nlargest(10).sort_values(ascending=True)
+            fig = px.bar(top_companies, x=top_companies.values, y=top_companies.index, orientation='h', labels={'y': 'Компания', 'x': 'Общее количество вакансий'}, title='Топ-10 компаний по количеству вакансий', text_auto=True, height=600)
+            fig.update_layout(yaxis_title="Название компании")
+            st.plotly_chart(fig, use_container_width=True)
+
+        elif menu == 'Связь категории и опыта работы':
+            st.subheader("Тепловая карта: Связь между категорией вакансии и требуемым опытом")
+            pivot_table = pd.crosstab(index=df_vacancies['Категория'], columns=df_vacancies['Опыт работы'])
+            fig = px.imshow(pivot_table, text_auto=True, aspect="auto", labels=dict(x="Опыт работы (лет)", y="Категория", color="Количество вакансий"), title="Количество вакансий по категориям и опыту", height=800)
+            st.plotly_chart(fig, use_container_width=True)
+
+
 # --- БЛОК 2: АНАЛИЗ РЕЗЮМЕ ---
 elif analysis_type == "Анализ резюме":
     df_resumes_raw = load_data("resumes_enbekkz.csv")
     
-    if df_resumes_raw is not None:
-        # Переименовываем колонку для консистентности
+    if df_resumes_raw is None:
+        st.error("Не удалось загрузить данные по резюме. Убедитесь, что файл 'resumes_enbekkz.csv' находится в корневой папке вашего проекта.")
+    else:
         df_resumes = df_resumes_raw.rename(columns={"City/Region": "Region"})
 
         # --- Меню для выбора графика резюме ---
@@ -161,87 +217,67 @@ elif analysis_type == "Анализ резюме":
         )
         st.sidebar.divider()
 
-        # --- ГЛОБАЛЬНЫЙ ФИЛЬТР ПО РЕГИОНАМ (теперь он всегда на виду) ---
+        # --- ГЛОБАЛЬНЫЙ ФИЛЬТР ПО РЕГИОНАМ ---
         st.sidebar.subheader("Фильтры")
-        all_regions = df_resumes['Region'].dropna().unique()
+        all_regions = sorted(df_resumes['Region'].dropna().unique())
         region_selection = st.sidebar.multiselect(
-            "Выберите регионы:",
-            options=all_regions,
-            default=list(all_regions)
+            "Выберите регионы:", options=all_regions, default=list(all_regions)
         )
         
-        # Применяем фильтр
         if region_selection:
             filtered_df = df_resumes[df_resumes['Region'].isin(region_selection)]
         else:
             filtered_df = df_resumes
-            st.sidebar.warning("Не выбрано ни одного региона. Отображаются данные по всей стране.")
+            st.sidebar.warning("Не выбран ни одного региона. Отображаются данные по всей стране.")
 
         # --- Основная область для отображения ---
         st.header("Анализ данных по резюме")
+        st.markdown(f"**Выбранные регионы:** {', '.join(region_selection) if region_selection else 'Все'}")
+        st.divider()
         
         if chart_type == "Топ-20 регионов по количеству резюме":
             st.subheader("Топ-20 регионов по количеству размещенных резюме")
-            st.markdown(f"**Выбранные регионы:** {', '.join(region_selection) if region_selection else 'Все'}")
-            
             region_counts = filtered_df['Region'].value_counts().head(20)
-            fig, ax = plt.subplots(figsize=(12, 8))
-            sns.barplot(x=region_counts.values, y=region_counts.index, ax=ax, palette="crest")
-            ax.set_title("Количество резюме по регионам", fontsize=16)
-            ax.set_xlabel("Количество резюме", fontsize=12)
-            ax.set_ylabel("Регион", fontsize=12)
-            ax.bar_label(ax.containers[0])
-            plt.tight_layout()
-            st.pyplot(fig)
+            fig = px.bar(region_counts, x=region_counts.index, y=region_counts.values, title="Количество резюме по регионам", labels={'x': 'Регион', 'y': 'Количество резюме'}, text_auto=True, height=600)
+            fig.update_layout(xaxis_tickangle=-45)
+            st.plotly_chart(fig, use_container_width=True)
         
         elif chart_type == "Самые популярные профессии":
             st.subheader("Топ-10 самых популярных профессий среди соискателей")
-            st.markdown(f"**Выбранные регионы:** {', '.join(region_selection) if region_selection else 'Все'}")
-            
             top_jobs = filtered_df['Category'].value_counts().head(10)
-            fig, ax = plt.subplots(figsize=(12, 8))
-            sns.barplot(x=top_jobs.values, y=top_jobs.index, ax=ax, palette="magma")
-            ax.set_title("Топ-10 профессий в выбранных регионах", fontsize=16)
-            ax.set_xlabel("Количество резюме", fontsize=12)
-            ax.set_ylabel("Категория профессии", fontsize=12)
-            ax.bar_label(ax.containers[0])
-            plt.tight_layout()
-            st.pyplot(fig)
+            fig = px.bar(top_jobs, y=top_jobs.index, x=top_jobs.values, orientation='h', title="Топ-10 профессий в выбранных регионах", labels={'y': 'Категория профессии', 'x': 'Количество резюме'}, text_auto=True, height=600)
+            st.plotly_chart(fig, use_container_width=True)
             
         elif chart_type == "Зависимость зарплаты от опыта":
             st.subheader("Зависимость ожидаемой зарплаты от опыта работы")
-            st.markdown(f"**Выбранные регионы:** {', '.join(region_selection) if region_selection else 'Все'}")
+            df_plot = filtered_df.dropna(subset=['Salary', 'Work experience (year)'])
+            df_plot = df_plot[df_plot['Salary'] < 5000000] # Убираем выбросы для наглядности
+            fig = px.scatter(df_plot, x="Work experience (year)", y="Salary", color="Region", title="Ожидаемая зарплата vs. Опыт работы", labels={"Work experience (year)": "Опыт работы (лет)", "Salary": "Ожидаемая зарплата (KZT)"}, hover_name="Category", height=600)
+            st.plotly_chart(fig, use_container_width=True)
 
-            fig = px.scatter(
-                filtered_df.dropna(subset=['Salary', 'Work experience (year)']),
-                x="Work experience (year)",
-                y="Salary",
-                color="Region",
-                title="Ожидаемая зарплата vs. Опыт работы",
-                labels={"Work experience (year)": "Опыт работы (лет)", "Salary": "Ожидаемая зарплата (KZT)"},
-                hover_name="Category"
-            )
-            fig.update_layout(height=600)
+        elif chart_type == "Распределение по уровню образования":
+            st.subheader("Распределение соискателей по уровню образования")
+            edu_counts = filtered_df['Education'].value_counts()
+            fig = px.pie(edu_counts, values=edu_counts.values, names=edu_counts.index, title="Распределение по уровню образования", hole=0.3)
+            fig.update_traces(textinfo='percent+label')
+            st.plotly_chart(fig, use_container_width=True)
+        
+        elif chart_type == "Статистика зарплат по регионам":
+            st.subheader("Статистика зарплат (среднее, медиана, мода) по регионам")
+            grouped = filtered_df.groupby("Region")["Salary"].agg(["mean", "median", lambda x: x.mode().iloc[0] if not x.mode().empty else None]).rename(columns={'<lambda_0>': 'mode'})
+            grouped = grouped.dropna().sort_values("mean", ascending=False).head(20)
+            st.dataframe(grouped.style.format("{:,.0f} KZT"), use_container_width=True)
+            
+        elif chart_type == "Распределение зарплат по условиям работы":
+            st.subheader("Распределение ожидаемых зарплат по условиям работы")
+            df_plot = filtered_df.dropna(subset=['Salary', 'working conditions'])
+            df_plot = df_plot[df_plot['Salary'] < 5000000] # Убираем выбросы
+            fig = px.box(df_plot, x="working conditions", y="Salary", color="working conditions", title="Распределение зарплат по условиям работы", labels={"working conditions": "Условия работы", "Salary": "Ожидаемая зарплата (KZT)"}, height=600)
             st.plotly_chart(fig, use_container_width=True)
 
         elif chart_type == "Распределение зарплат по полу":
             st.subheader("Распределение ожидаемых зарплат по полу")
-            st.markdown(f"**Выбранные регионы:** {', '.join(region_selection) if region_selection else 'Все'}")
-
-            fig = px.box(
-                filtered_df.dropna(subset=['Salary', 'Sex']),
-                x="Sex",
-                y="Salary",
-                color="Sex",
-                title="Распределение зарплат по полу",
-                labels={"Sex": "Пол", "Salary": "Ожидаемая зарплата (KZT)"}
-            )
-            fig.update_layout(height=600)
+            df_plot = filtered_df.dropna(subset=['Salary', 'Sex'])
+            df_plot = df_plot[df_plot['Salary'] < 5000000] # Убираем выбросы
+            fig = px.box(df_plot, x="Sex", y="Salary", color="Sex", title="Распределение зарплат по полу", labels={"Sex": "Пол", "Salary": "Ожидаемая зарплата (KZT)"}, height=600)
             st.plotly_chart(fig, use_container_width=True)
-
-# Обработка случая, когда данные не загрузились
-else:
-    if analysis_type == "Анализ вакансий" and df_vacancies is None:
-        st.error("Не удалось загрузить данные по вакансиям. Проверьте наличие файла 'main_cleaned_vacancies.csv'.")
-    elif analysis_type == "Анализ резюме" and df_resumes_raw is None:
-        st.error("Не удалось загрузить данные по резюме. Проверьте наличие файла 'resumes_enbekkz.csv'.")
