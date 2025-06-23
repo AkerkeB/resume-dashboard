@@ -12,7 +12,6 @@ import os
 
 # --- Конфигурация страницы и опции ---
 st.set_page_config(layout="wide", page_title="Kazakhstan Job Market Analysis")
-st.set_option('deprecation.showPyplotGlobalUse', False) # Убираем предупреждение для st.pyplot()
 
 # --- Надежная загрузка данных ---
 @st.cache_data
