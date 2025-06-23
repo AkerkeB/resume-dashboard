@@ -302,7 +302,7 @@ elif analysis_type == "Анализ резюме":
 
             if region_selection_local:
                 filtered_df_local = df_resumes[df_resumes['Region'].isin(region_selection_local)]
-                edu_counts = filtered_df_local['Education'].value_counts()
+                edu_counts = filtered_df_local['education_level_target'].value_counts()
                 fig = px.pie(edu_counts, values=edu_counts.values, names=edu_counts.index, title="Распределение по уровню образования", hole=0.3)
                 fig.update_traces(textinfo='percent+label')
                 st.plotly_chart(fig, use_container_width=True)
