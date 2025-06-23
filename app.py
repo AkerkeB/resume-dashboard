@@ -23,7 +23,7 @@ def load_vacancy_data():
 def load_resume_data():
     """Загружает и подготавливает данные по резюме."""
     df = pd.read_csv("resumes_enbekkz.csv")
-    df = df.rename(columns={"Область": "Region"})
+    df = df.rename(columns={"City/Region": "Region"})
     return df
 
 # --- Основная часть приложения ---
